@@ -8,42 +8,39 @@
         </div>
       </template>
 
-      <!-- 提示信息 -->
       <el-alert
-        title="操作须知：此操作将同时在 3 个生产/测试数据库中执行，请确保 SQL 语句准确无误且包含分号结尾。"
-        type="info"
-        show-icon
-        :closable="false"
-        class="mb-20"
+          title="操作须知：此操作将同时在 3 个生产/测试数据库中执行，请确保 SQL 语句准确无误且包含分号结尾。"
+          type="info"
+          show-icon
+          :closable="false"
+          class="mb-20"
       />
 
-      <!-- SQL 输入区域 -->
       <el-form :model="form" label-position="top">
         <el-form-item label="请输入 DDL / DML 语句">
           <el-input
-            v-model="form.sqlContent"
-            type="textarea"
-            :rows="8"
-            placeholder="例如：ALTER TABLE users ADD COLUMN age INT COMMENT '年龄';"
-            resize="none"
-            class="sql-input"
+              v-model="form.sql"
+              type="textarea"
+              :rows="8"
+              placeholder="例如：ALTER TABLE users ADD COLUMN age INT COMMENT '年龄';"
+              resize="none"
+              class="sql-input"
           />
         </el-form-item>
 
-        <!-- 操作按钮区 -->
         <div class="action-area">
           <el-button @click="resetForm">清空</el-button>
           <el-popconfirm
-            width="220"
-            confirm-button-text="确定执行"
-            cancel-button-text="取消"
-            icon="el-icon-warning"
-            icon-color="#F56C6C"
-            title="确定要向所有数据源发送此 SQL 吗？"
-            @confirm="handleExecute"
+              width="220"
+              confirm-button-text="确定执行"
+              cancel-button-text="取消"
+              icon="el-icon-warning"
+              icon-color="#F56C6C"
+              title="确定要向所有数据源发送此 SQL 吗？"
+              @confirm="handleExecute"
           >
             <template #reference>
-              <el-button type="primary" :loading="loading" :disabled="!form.sqlContent">
+              <el-button type="primary" :loading="loading" :disabled="!form.sql">
                 立即执行
               </el-button>
             </template>
@@ -52,7 +49,6 @@
       </el-form>
     </el-card>
 
-    <!-- 执行结果反馈区域 -->
     <el-card class="box-card mt-20" v-if="executionLogs.length > 0">
       <template #header>
         <div class="card-header">
@@ -60,20 +56,20 @@
           <el-button type="text" @click="executionLogs = []">清除日志</el-button>
         </div>
       </template>
-      
+
       <el-timeline>
         <el-timeline-item
-          v-for="(log, index) in executionLogs"
-          :key="index"
-          :type="log.status === 'success' ? 'success' : 'danger'"
-          :timestamp="log.timestamp"
-          placement="top"
+            v-for="(log, index) in executionLogs"
+            :key="index"
+            :type="log.statusType"
+            :timestamp="log.timestamp"
+            placement="top"
         >
           <el-card>
             <h4>{{ log.dbName }} ({{ log.ip }})</h4>
-            <p>执行结果: 
-              <el-tag :type="log.status === 'success' ? 'success' : 'danger'">
-                {{ log.status === 'success' ? '成功' : '失败' }}
+            <p>执行结果:
+              <el-tag :type="log.statusType">
+                {{ log.success ? '成功' : '失败' }}
               </el-tag>
             </p>
             <p v-if="log.message" class="error-msg">{{ log.message }}</p>
@@ -88,11 +84,11 @@
 <script setup>
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
-import axios from 'axios' // 假设你使用了axios
+import { executeSql } from '@/api/sql'
 
 // 表单数据
 const form = reactive({
-  sqlContent: ''
+  sql: ''
 })
 
 const loading = ref(false)
@@ -100,54 +96,46 @@ const executionLogs = ref([])
 
 // 清空输入
 const resetForm = () => {
-  form.sqlContent = ''
+  form.sql = ''
 }
 
 // 执行逻辑
 const handleExecute = async () => {
-  if (!form.sqlContent.trim()) {
+  // 5. 【修复】定义 sqlContent 变量，避免下方报错
+  const sqlContent = form.sql.trim()
+
+  if (!sqlContent) {
     ElMessage.warning('请输入SQL语句')
     return
   }
 
   loading.value = true
-  
-  // 模拟后端接口调用，请替换为您真实的接口地址
-  // 假设后端返回结构为: 
-  // { code: 200, data: [ { dbName: '库1', ip: '192.168.1.1', status: 'success', msg: 'OK' }, ... ] }
-  try {
-    // 这里替换为您的真实后端接口 API
-    // const res = await axios.post('/api/sql/execute-multi', { sql: form.sqlContent })
-    
-    // --- 模拟数据开始 (联调时请删除) ---
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    const mockResponse = [
-      { dbName: 'Master_DB', ip: '192.168.1.101', status: 'success', msg: 'Affected rows: 1' },
-      { dbName: 'Slave_DB_1', ip: '192.168.1.102', status: 'success', msg: 'Affected rows: 1' },
-      { dbName: 'Slave_DB_2', ip: '192.168.1.103', status: 'error', msg: 'Syntax error near...' } // 模拟一个失败
-    ]
-    // --- 模拟数据结束 ---
 
-    // 处理返回结果
+  try {
+    // 调用接口
+    const res = await executeSql({ sql: sqlContent })
+
+    const resultList = res.data || []
     const currentTimestamp = new Date().toLocaleString()
-    
-    // 将后端返回的结果格式化并加入日志列表
-    mockResponse.forEach(item => {
+
+    resultList.forEach(item => {
       executionLogs.value.unshift({
         dbName: item.dbName,
         ip: item.ip,
-        status: item.status, // 'success' or 'error'
-        message: item.msg,
-        sql: form.sqlContent,
+        success: item.success,
+        // 生成 element-plus 需要的状态字符串
+        statusType: item.success ? 'success' : 'danger',
+        message: item.message,
+        data: item.data,
+        sql: sqlContent, // 这里就可以正常使用 sqlContent 了
         timestamp: currentTimestamp
       })
     })
 
-    ElMessage.success('执行请求已发送，请查看下方详细结果')
+    ElMessage.success('执行完成，请查看下方详细结果')
 
   } catch (error) {
-    console.error(error)
-    ElMessage.error('请求发送失败，请检查网络或后端服务')
+    console.error('Component Error:', error)
   } finally {
     loading.value = false
   }
@@ -180,7 +168,6 @@ const handleExecute = async () => {
   margin-top: 20px;
 }
 
-/* 优化输入框字体，使其看起来像代码 */
 .sql-input :deep(.el-textarea__inner) {
   font-family: 'Consolas', 'Monaco', monospace;
   background-color: #fafafa;
@@ -209,6 +196,6 @@ const handleExecute = async () => {
   font-size: 12px;
   margin-top: 5px;
   font-family: monospace;
-  white-space: pre-wrap; /* 保留换行 */
+  white-space: pre-wrap;
 }
 </style>
